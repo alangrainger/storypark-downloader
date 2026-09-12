@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and compile
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build container image
+        run: docker build -t storypark-downloader:ci .
+
+      - name: Smoke test (starts, rejects a bad cookie, exits 1)
+        run: |
+          set +e
+          docker run --rm -e STORYPARK_SESSION_ID=invalid -e INTERVAL=0 storypark-downloader:ci
+          test $? -eq 1

@@ -1,0 +1,12 @@
+services:
+  storypark-downloader:
+    image: ghcr.io/alangrainger/storypark-downloader:latest
+    container_name: storypark-downloader
+    env_file: .env
+    environment:
+      OUTPUT_DIR: /data
+    volumes:
+      - ${PHOTOS_HOST_PATH:?set PHOTOS_HOST_PATH in .env}:/data
+    ports:
+      - "${HEALTH_PORT:-3000}:3000"
+    restart: unless-stopped
