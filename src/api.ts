@@ -53,6 +53,8 @@ export interface Story {
   title: string
   /** YYYY-MM-DD */
   date: string
+  /** First ~200 characters of the post text. The full text needs storyText(). */
+  excerpt?: string
   status: string
   published_at: string
   media: Media[]
@@ -118,6 +120,15 @@ export class StoryparkClient {
       if (!page.next_page_token) return all
       token = page.next_page_token
     }
+  }
+
+  /**
+   * The full text of one post. The stories list carries only a truncated excerpt, so this costs
+   * one extra request per post; "display_content" is the flattened form of the rich-text blocks.
+   */
+  async storyText(storyId: string): Promise<string> {
+    const body = await this.getJson<{ story?: { display_content?: string; excerpt?: string } }>(`/api/v3/stories/${storyId}`)
+    return (body.story?.display_content || body.story?.excerpt || '').replace(/\r\n/g, '\n').trim()
   }
 
   /** A centre's details, or undefined if the record is not readable. Cached for the client's life. */

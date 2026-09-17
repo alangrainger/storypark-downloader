@@ -11,6 +11,14 @@ Storypark lets families view stories but gives them no way to keep the originals
 - 🔁 **Safe to re-run.** Only new items are fetched. Everything already saved is left alone.
 - 🖼️ **Immich-friendly.** Add the folder as an external library and let an Immich workflow drop every new item into an album for each child.
 
+> [!IMPORTANT]
+> This container is intended to be served on your local network. It holds a session cookie with full
+> access to your Storypark account, and its HTTP endpoints have no authentication: anyone who can
+> reach the port can read `/health` and, if the calendar feed is on, your centre's notices.
+>
+> If you want to make the calendar feed public, use a reverse proxy that exposes only that one path,
+> and set EVENTS_TOKEN so the URL is not guessable.
+
 ## Contents
 
 - [Quick start](#quick-start)
@@ -19,6 +27,7 @@ Storypark lets families view stories but gives them no way to keep the originals
 - [What you get](#what-you-get)
 - [How dates are worked out](#how-dates-are-worked-out)
 - [Using with Immich](#using-with-immich)
+- [Calendar feed](#calendar-feed)
 - [When the cookie expires](#when-the-cookie-expires)
 - [Updating](#updating)
 - [How it works](#how-it-works)
@@ -84,6 +93,12 @@ All settings are environment variables, normally set in `.env`.
 | `CENTRE_GPS` | none | manual coordinates per centre, e.g. `100001=-41.2865,174.7762;100002=-36.8485,174.7633` |
 | `TZ` | `Pacific/Auckland` | fallback time zone, used only when a centre does not report one |
 | `HEALTH_PORT` | `3000` | host port for `/health` (compose only) |
+| `EVENTS_API_URL` | none | turns on the [calendar feed](#calendar-feed); base URL of an OpenAI-compatible API |
+| `EVENTS_MODEL` | required with the above | model id, which must accept images |
+| `EVENTS_API_KEY` | none | bearer token, if your model server wants one |
+| `EVENTS_MIN_CONFIDENCE` | `0.6` | drop events the model is less sure of than this |
+| `EVENTS_MAX_POST_AGE_DAYS` | `60` | oldest post worth reading; not a limit on the events |
+| `EVENTS_TOKEN` | none | secret path segment for the feed URL |
 
 Child and centre IDs appear in the log on every run.
 
@@ -134,6 +149,54 @@ Add the output folder as an [external library](https://docs.immich.app/features/
 
 If an update rewrites metadata on existing files, Immich will not notice on its own. Select the affected assets, for example by searching for the file name prefix `storypark_`, and choose **Refresh metadata**.
 
+## Calendar feed
+
+Centres announce their events as ordinary posts: a sentence of text, often with a poster image or a
+PDF newsletter. There is nothing structured to subscribe to. Point this tool at a local language
+model and it reads each new post, pulls out anything that belongs in a calendar, and publishes the
+lot as an iCal feed your phone can subscribe to.
+
+The feature is off until `EVENTS_API_URL` is set. It needs a model server that speaks the
+OpenAI chat completions API and a model that can read images - [Ollama](https://ollama.com),
+LM Studio, vLLM and llama.cpp all qualify.
+
+```sh
+EVENTS_API_URL=http://localhost:11434/v1
+EVENTS_MODEL=qwen3-vl:8b
+```
+
+The feed appears at `http://<host>:3000/events.ics` and is rewritten at the end of every cycle. It
+holds events from today onwards only; past ones drop off. Each entry carries the post text and a
+link back to the story on Storypark.
+
+`EVENTS_MAX_POST_AGE_DAYS` is about posts, not events. A centre announces an event weeks before it
+happens, so on a first run the tool has to read back far enough to find those announcements. After
+that it only reads posts it has not seen before, and the setting stops mattering.
+
+**Subscribing.** In Apple Calendar, *File > New Calendar Subscription*, paste the URL, and set it to
+refresh hourly. On iOS, *Settings > Apps > Calendar > Accounts > Add Account > Other > Add
+Subscribed Calendar*. Home Assistant reads it through the Remote Calendar integration.
+
+Google Calendar is the exception. It fetches subscribed feeds from Google's own servers, so a feed
+on your own network is invisible to it. Reaching it means publishing the feed through a reverse
+proxy, as described at the top of this page, with `EVENTS_TOKEN` set. A client that polls from your
+own device or server avoids the question entirely.
+
+**If you do expose the port,** set `EVENTS_TOKEN` to a long random string, for example from
+`openssl rand -hex 16`. The feed then moves to `http://<host>:3000/<token>/events.ics`, which is
+unguessable, and the bare path stops working. It is obscurity rather than authentication: it stops
+a casual scan, but the URL is still readable by anything that logs it.
+
+**What gets sent where.** Post text and attached images go to whatever `EVENTS_API_URL` points at,
+once per post. Pointing it at a machine on your own network keeps everything in the house; pointing
+it at a hosted API sends your centre's posts and photos to that provider.
+
+**Accuracy.** The model reads posters as well as text, including handwritten ones, but it does
+misread the occasional date. Every event carries a confidence score and anything below
+`EVENTS_MIN_CONFIDENCE` is dropped. Treat the feed as a prompt to check the original post, which is
+one tap away on each entry, rather than as gospel. Raising the threshold gives you fewer, safer
+entries.
+
 ## When the cookie expires
 
 Storypark sessions eventually expire. When that happens the container keeps running, logs `COOKIE EXPIRED` on every cycle, and `/health` returns 503 with `"status": "auth_error"`. Repeat [Getting the cookie](#getting-the-cookie), update `.env`, and restart the container.
@@ -164,6 +227,10 @@ npm ci
 npm run build
 STORYPARK_SESSION_ID=... OUTPUT_DIR=./data INTERVAL=0 node dist/index.js
 ```
+
+If you are using the [calendar feed](#calendar-feed), `npm run preview -- --days 14` reads your
+recent posts and prints what the model finds in each, without writing a state file or a feed. It is
+the quickest way to compare models or settle on a confidence threshold.
 
 To build the image locally: `docker build -t storypark-downloader .`
 

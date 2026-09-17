@@ -1,3 +1,20 @@
+/** Optional event extraction and iCal feed, off unless EVENTS_API_URL is set. */
+export interface EventsConfig {
+  /** Base URL of an OpenAI-compatible API, including the /v1 path. */
+  apiUrl: string
+  /** Model id as that server names it; must accept image input. */
+  model: string
+  /** Bearer token, for servers that want one. */
+  apiKey?: string
+  /** Drop events the model is less sure of than this. */
+  minConfidence: number
+  /** Oldest post worth reading, in days. Not a limit on the events themselves: the feed always
+      runs from today onwards, but a post announces an event weeks before it happens. */
+  maxPostAgeDays: number
+  /** Secret path segment for the feed, for when the port is not private. */
+  token?: string
+}
+
 /** Runtime configuration, read once from environment variables. */
 export interface Config {
   /** Full Cookie header value sent to Storypark. */
@@ -13,6 +30,8 @@ export interface Config {
   timeZone: string
   /** Manual coordinates per centre id, overriding geocoding. */
   centreGps: Record<string, { lat: number; lon: number }>
+  /** Undefined when EVENTS_API_URL is unset, which is the default. */
+  events?: EventsConfig
 }
 
 /** Parse CENTRE_GPS="100001=-41.2865,174.7762;100002=-36.8485,174.7633". */
@@ -40,6 +59,49 @@ function toCookieHeader(value: string): string {
   return v.includes('=') ? v : `_session_id=${v}`
 }
 
+/** Accept a bare "http://host:11434" as well as a full "http://host:11434/v1". */
+export function normaliseApiUrl(value: string): string {
+  let url: URL
+  try {
+    url = new URL(value.trim())
+  } catch {
+    throw new Error(`EVENTS_API_URL must be a URL such as "http://localhost:11434/v1", got "${value}"`)
+  }
+  return url.origin + (url.pathname.replace(/\/+$/, '') || '/v1')
+}
+
+/** Read a number from the environment, rejecting anything outside the range. */
+function numberInRange(name: string, raw: string | undefined, fallback: number, min: number, max: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${name} must be a number between ${min} and ${max}, got "${raw}"`)
+  }
+  return value
+}
+
+function loadEventsConfig(env: NodeJS.ProcessEnv): EventsConfig | undefined {
+  const apiUrl = env.EVENTS_API_URL?.trim()
+  if (!apiUrl) return undefined
+  const model = env.EVENTS_MODEL?.trim()
+  if (!model) throw new Error('EVENTS_MODEL is required when EVENTS_API_URL is set')
+  const token = env.EVENTS_TOKEN?.trim() || undefined
+  if (token && !/^[A-Za-z0-9._~-]+$/.test(token)) {
+    throw new Error('EVENTS_TOKEN must contain only letters, digits and "._~-", since it becomes part of the URL')
+  }
+  /* These two pass the character check, but HTTP clients rewrite dot segments away before sending,
+     so the feed would be unreachable while the log still advertised it. */
+  if (token === '.' || token === '..') throw new Error('EVENTS_TOKEN cannot be "." or ".."')
+  return {
+    apiUrl: normaliseApiUrl(apiUrl),
+    model,
+    apiKey: env.EVENTS_API_KEY?.trim() || undefined,
+    minConfidence: numberInRange('EVENTS_MIN_CONFIDENCE', env.EVENTS_MIN_CONFIDENCE, 0.6, 0, 1),
+    maxPostAgeDays: numberInRange('EVENTS_MAX_POST_AGE_DAYS', env.EVENTS_MAX_POST_AGE_DAYS, 60, 1, 3650),
+    token,
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const session = env.STORYPARK_SESSION_ID
   if (!session) throw new Error('STORYPARK_SESSION_ID is required (see README for how to get it)')
@@ -52,5 +114,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 3000),
     timeZone: env.TZ || 'Pacific/Auckland',
     centreGps: parseCentreGps(env.CENTRE_GPS ?? ''),
+    events: loadEventsConfig(env),
   }
 }

@@ -8,6 +8,7 @@ import {
   exifDateString, exists, extensionFor, isoLocalWithOffset, localDay, readJson, safeName, saveStream, timestampName,
   utcOffsetString, writeJson, zonedNoon,
 } from './files.js'
+import { type EventsState, type EventStats, type FeedPost, updateEvents } from './events.js'
 import { geocode, type GeoPoint } from './geocode.js'
 import { log } from './log.js'
 import { stampMp4Date } from './mp4.js'
@@ -26,6 +27,8 @@ interface State {
   files: Record<string, string>
   /** centre id -> geocoded position (null = looked up, nothing found) */
   centres?: Record<string, (GeoPoint & { query: string }) | null>
+  /** Only present when the events feature is on. */
+  events?: EventsState
 }
 
 export interface SyncStats {
@@ -35,6 +38,8 @@ export interface SyncStats {
   skipped: number
   stamped: number
   failed: number
+  /** Only present when the events feature is on. */
+  events?: EventStats
 }
 
 /** Everything embedded into a file besides the bytes themselves. */
@@ -175,6 +180,7 @@ export async function syncAll(config: Config): Promise<SyncStats> {
   const backfill = state.version < STATE_VERSION
   if (backfill) log.info('older state file: rewriting embedded metadata on previously saved files')
   const reserved = new Set<string>()
+  const posts = new Map<string, FeedPost>()
 
   let children = await client.children()
   if (config.childIds.length) children = children.filter(c => config.childIds.includes(c.id))
@@ -191,6 +197,8 @@ export async function syncAll(config: Config): Promise<SyncStats> {
 
     for (const story of stories) {
       stats.stories++
+      /* Siblings share the centre's community posts, so the map keeps one copy of each. */
+      if (config.events) posts.set(story.id, { story, timeZone: tz })
       const description = `${story.title.trim()}\n${storyUrl(story.id)}`
       const jobs: Promise<void>[] = []
       for (const media of story.media.filter(m => WANTED_TYPES.has(m.type))) {
@@ -225,6 +233,17 @@ export async function syncAll(config: Config): Promise<SyncStats> {
       if (jobs.length === 0) continue
       await Promise.all(jobs)
       await writeJson(statePath, state)
+    }
+  }
+
+  if (config.events) {
+    try {
+      stats.events = await updateEvents(client, config, config.events, posts, (state.events ??= { posts: {} }))
+      const e = stats.events
+      log.info(`events: ${e.posts} posts in the window, ${e.read} read, ${e.failed} failed, ${e.published} in the feed`)
+    } catch (err) {
+      /* The photos are the point; a model or disk problem here must not fail the run. */
+      log.error(`events: update failed: ${(err as Error).message}`)
     }
   }
 

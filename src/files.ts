@@ -89,12 +89,22 @@ export function localDay(date: Date, timeZone: string): string {
   return `${p.year}-${p.month}-${p.day}`
 }
 
-/** The instant of 12:00 local time on a YYYY-MM-DD day in the given time zone. */
-export function zonedNoon(day: string, timeZone: string): Date {
-  const guess = new Date(`${day}T12:00:00Z`)
+/** The instant of an HH:MM wall-clock time on a YYYY-MM-DD day in the given time zone. */
+export function zonedTime(day: string, time: string, timeZone: string): Date {
+  const guess = new Date(`${day}T${time}:00Z`)
   const p = localParts(guess, timeZone)
   const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second)
   return new Date(guess.getTime() - (wall - guess.getTime()))
+}
+
+/** The instant of 12:00 local time on a YYYY-MM-DD day in the given time zone. */
+export const zonedNoon = (day: string, timeZone: string): Date => zonedTime(day, '12:00', timeZone)
+
+/** Shift a YYYY-MM-DD day by whole days. */
+export function addDays(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 export async function exists(p: string): Promise<boolean> {
@@ -114,12 +124,15 @@ export async function readJson<T>(p: string): Promise<T | undefined> {
   }
 }
 
-/** Write JSON atomically (temp file + rename) so a crash never truncates it. */
-export async function writeJson(p: string, value: unknown): Promise<void> {
+/** Write a file atomically (temp file + rename) so a crash never truncates it. */
+export async function writeFileAtomic(p: string, contents: string): Promise<void> {
   await mkdir(path.dirname(p), { recursive: true })
-  await writeFile(p + '.tmp', JSON.stringify(value, null, 2) + '\n')
+  await writeFile(p + '.tmp', contents)
   await rename(p + '.tmp', p)
 }
+
+export const writeJson = (p: string, value: unknown): Promise<void> =>
+  writeFileAtomic(p, JSON.stringify(value, null, 2) + '\n')
 
 /** Stream a response body to disk via a .part file, then set the mtime. */
 export async function saveStream(res: Response, dest: string, mtime: Date): Promise<void> {
