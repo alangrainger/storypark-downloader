@@ -1,6 +1,6 @@
 {
   "name": "storypark-downloader",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Automatically download your children's photos and videos from Storypark, with dates, location and story links embedded for Immich and other photo libraries",
   "license": "Unlicense",
   "repository": {
