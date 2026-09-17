@@ -100,6 +100,7 @@ All settings are environment variables, normally set in `.env`.
 | `EVENTS_MIN_CONFIDENCE` | `0.6` | drop events the model is less sure of than this |
 | `EVENTS_MAX_POST_AGE_DAYS` | `60` | oldest post worth reading; not a limit on the events |
 | `EVENTS_TOKEN` | none | secret path segment for the feed URL |
+| `EVENTS_IGNORE_CENTRES` | none | comma-separated centre IDs whose posts are not read for events |
 
 Child and centre IDs appear in the log on every run.
 
@@ -190,6 +191,17 @@ own device or server avoids the question entirely.
 `openssl rand -hex 16`. The feed then moves to `http://<host>:3000/<token>/events.ics`, which is
 unguessable, and the bare path stops working. It is obscurity rather than authentication: it stops
 a casual scan, but the URL is still readable by anything that logs it.
+
+**More than one centre.** When two centres post to your account - siblings at different places, or
+a child who has just moved - every entry is prefixed with the centre that announced it, so
+`Photo Day` becomes `Sunnyvale Preschool: Photo Day`. With a single centre the prefix would be on
+every entry and tell you nothing, so it is left off. Either way the centre name is the first line of
+the event's notes.
+
+A child who changes centre keeps their old profile, and the old centre carries on posting to it, so
+its notices keep arriving indefinitely. Put that centre's ID in `EVENTS_IGNORE_CENTRES` and its
+posts stop being read. Photos are unaffected, so the old centre's last stories still get archived -
+only the calendar is scoped. Centre IDs are in the log on every run.
 
 **What gets sent where.** Post text and attached images go to whatever `EVENTS_API_URL` points at,
 once per post. Pointing it at a machine on your own network keeps everything in the house; pointing

@@ -97,6 +97,7 @@ function toCalendarEvent(event: ExtractedEvent, story: Story, text: string, time
   }
 
   const description = [
+    story.group_name,
     story.title?.trim(),
     text.length > MAX_DESCRIPTION ? `${text.slice(0, MAX_DESCRIPTION)}...` : text,
     storyUrl(story.id),
@@ -132,7 +133,11 @@ export async function updateEvents(
   const cutoff = addDays(localDay(now, config.timeZone), -events.maxPostAgeDays)
   const stats: EventStats = { posts: 0, read: 0, published: 0, failed: 0 }
 
-  const recent = [...posts.values()].filter(p => p.story.date >= cutoff).sort((a, b) => a.story.date.localeCompare(b.story.date))
+  const recent = [...posts.values()]
+    .filter(p => p.story.date >= cutoff && !events.ignoreCentres.includes(p.story.group_id ?? ''))
+    .sort((a, b) => a.story.date.localeCompare(b.story.date))
+  const ignored = [...posts.values()].filter(p => p.story.date >= cutoff).length - recent.length
+  if (ignored) log.info(`events: ignoring ${ignored} posts from ${events.ignoreCentres.join(', ')}`)
   for (const { story } of recent) {
     stats.posts++
     if (state.posts[story.id]?.version === PROMPT_VERSION) continue
@@ -161,7 +166,7 @@ export async function updateEvents(
     if (entry.date < cutoff) delete state.posts[id]
   }
 
-  const calendar = new Map<string, { event: CalendarEvent; confidence: number }>()
+  const calendar = new Map<string, { event: CalendarEvent; confidence: number; centre?: string }>()
   for (const { story, timeZone } of recent) {
     const entry = state.posts[story.id]
     for (const extracted of entry?.events ?? []) {
@@ -169,11 +174,21 @@ export async function updateEvents(
       const event = toCalendarEvent(extracted, story, entry?.text ?? '', timeZone, now)
       if (!event) continue
       const seen = calendar.get(event.uid)
-      if (!seen || extracted.confidence > seen.confidence) calendar.set(event.uid, { event, confidence: extracted.confidence })
+      if (!seen || extracted.confidence > seen.confidence) {
+        calendar.set(event.uid, { event, confidence: extracted.confidence, centre: story.group_name })
+      }
     }
   }
 
-  const list = [...calendar.values()].map(entry => entry.event).sort((a, b) => startKey(a).localeCompare(startKey(b)))
+  /* With two centres posting, "Photo Day" alone says nothing about whose photo day it is. With
+     one, the prefix would be on every entry and tell you nothing. This counts the centres in the
+     feed rather than the ones that happened to produce events, so the label does not come and go
+     as events are found. The UID is keyed on the bare title, so gaining or losing a centre never
+     re-creates the existing entries. */
+  const centres = new Set(recent.map(p => p.story.group_name).filter(Boolean))
+  const list = [...calendar.values()]
+    .map(({ event, centre }) => (centres.size > 1 && centre ? { ...event, summary: `${centre}: ${event.summary}` } : event))
+    .sort((a, b) => startKey(a).localeCompare(startKey(b)))
   stats.published = list.length
   await writeFileAtomic(path.join(config.stateDir, EVENTS_FILE), buildCalendar(CALENDAR_NAME, list, now))
   return stats

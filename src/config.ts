@@ -13,6 +13,8 @@ export interface EventsConfig {
   maxPostAgeDays: number
   /** Secret path segment for the feed, for when the port is not private. */
   token?: string
+  /** Centres whose posts are never read for events, by centre id. */
+  ignoreCentres: string[]
 }
 
 /** Runtime configuration, read once from environment variables. */
@@ -100,6 +102,7 @@ function loadEventsConfig(env: NodeJS.ProcessEnv): EventsConfig | undefined {
     model,
     apiKey: env.EVENTS_API_KEY?.trim() || undefined,
     minConfidence: numberInRange('EVENTS_MIN_CONFIDENCE', env.EVENTS_MIN_CONFIDENCE, 0.6, 0, 1),
+    ignoreCentres: (env.EVENTS_IGNORE_CENTRES ?? '').split(',').map(s => s.trim()).filter(Boolean),
     maxPostAgeDays: numberInRange('EVENTS_MAX_POST_AGE_DAYS', env.EVENTS_MAX_POST_AGE_DAYS, 60, 1, 3650),
     token,
   }

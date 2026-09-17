@@ -55,6 +55,9 @@ export interface Story {
   date: string
   /** First ~200 characters of the post text. The full text needs storyText(). */
   excerpt?: string
+  /** The centre that published the post. */
+  group_id?: string
+  group_name?: string
   status: string
   published_at: string
   media: Media[]
