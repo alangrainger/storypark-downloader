@@ -238,8 +238,6 @@ the quickest way to compare models or settle on a confidence threshold.
 
 To build the image locally: `docker build -t storypark-downloader .`
 
-Releases are cut by pushing a `v*` tag matching the version in `package.json`; GitHub Actions builds the multi-arch image, pushes it to GHCR, attaches a build provenance attestation, and opens a draft release for the tag with notes generated from the commits, ready to edit and publish.
-
 ## Licence
 
 Public domain, under the [Unlicense](LICENSE).
