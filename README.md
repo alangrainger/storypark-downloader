@@ -17,7 +17,7 @@ Storypark lets families view stories but gives them no way to keep the originals
 > reach the port can read `/health` and, if the calendar feed is on, your centre's notices.
 >
 > If you want to make the calendar feed public, use a reverse proxy that exposes only that one path,
-> and set EVENTS_TOKEN so the URL is not guessable.
+> and set `EVENTS_TOKEN` so the URL is not guessable.
 
 ## Contents
 
