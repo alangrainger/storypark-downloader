@@ -14,7 +14,9 @@ import { log } from './log.js'
 import { stampMp4Date } from './mp4.js'
 import { writeXmpDescription } from './xmp.js'
 
-const STATE_FILE = '.storypark-downloader.json'
+const STATE_FILE = 'state.json'
+/* Where the state lived up to v1.0.0: hidden, and in among the photos. */
+const LEGACY_STATE_FILE = '.storypark-downloader.json'
 const PREFIX = 'storypark_'
 const WANTED_TYPES = new Set(['image', 'video'])
 /* Bumped whenever the embedded metadata changes; older state triggers a one-off re-stamp of every saved file. */
@@ -170,13 +172,32 @@ async function centreGps(centre: CentreInfo, config: Config, state: State): Prom
   }
 }
 
+/**
+ * Read the state file, falling back to where v1.0.0 kept it: hidden, in the photo folder. Without
+ * that fallback, renaming the file or splitting the directories would look like an empty state and
+ * re-download the whole library.
+ */
+async function loadState(config: Config): Promise<State | undefined> {
+  const current = await readJson<State>(path.join(config.stateDir, STATE_FILE))
+  if (current) return current
+  const legacyPath = path.join(config.outputDir, LEGACY_STATE_FILE)
+  const legacy = await readJson<State>(legacyPath)
+  if (legacy) {
+    log.warn(
+      `reading the old state file at ${legacyPath}; this run writes it to ${path.join(config.stateDir, STATE_FILE)} ` +
+        `instead. Delete the old copy once this run has finished cleanly.`,
+    )
+  }
+  return legacy
+}
+
 /** One full pass over every child and story. Throws AuthError if the cookie is dead. */
 export async function syncAll(config: Config): Promise<SyncStats> {
   const client = new StoryparkClient(config.cookie)
   const stats: SyncStats = { children: 0, stories: 0, downloaded: 0, skipped: 0, stamped: 0, failed: 0 }
   const run = limiter(config.concurrency)
-  const statePath = path.join(config.outputDir, STATE_FILE)
-  const state: State = (await readJson<State>(statePath)) ?? { version: STATE_VERSION, files: {} }
+  const statePath = path.join(config.stateDir, STATE_FILE)
+  const state: State = (await loadState(config)) ?? { version: STATE_VERSION, files: {} }
   const backfill = state.version < STATE_VERSION
   if (backfill) log.info('older state file: rewriting embedded metadata on previously saved files')
   const reserved = new Set<string>()

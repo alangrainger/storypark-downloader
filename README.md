@@ -41,9 +41,10 @@ You need Docker with the compose plugin. The image is published at `ghcr.io/alan
 mkdir storypark-downloader && cd storypark-downloader
 curl -O https://raw.githubusercontent.com/alangrainger/storypark-downloader/main/compose.yaml
 curl -o .env https://raw.githubusercontent.com/alangrainger/storypark-downloader/main/.env.example
+mkdir downloads state
 ```
 
-Edit `.env`: paste your cookie into `STORYPARK_SESSION_ID` (see [Getting the cookie](#getting-the-cookie)) and set `PHOTOS_HOST_PATH` to the folder that should receive the files. Then:
+Paste your cookie into `STORYPARK_SESSION_ID` in `.env` (see [Getting the cookie](#getting-the-cookie)). The compose file keeps photos in `./downloads` and the tool's own files in `./state`, so the photos folder can be handed to a photo library as-is. Then:
 
 ```sh
 docker compose up -d
@@ -57,12 +58,13 @@ Without compose:
 ```sh
 docker run -d --name storypark-downloader --restart unless-stopped \
   -e STORYPARK_SESSION_ID=your-cookie-value \
-  -v /path/to/photos:/data \
+  -v /path/to/photos:/downloads \
+  -v /path/to/state:/state \
   -p 3000:3000 \
   ghcr.io/alangrainger/storypark-downloader:latest
 ```
 
-The container runs as a non-root user (UID 1000). Make sure the photos folder is writable by that user.
+The container runs as a non-root user (UID 1000). Make sure both folders are writable by that user.
 
 `http://localhost:3000/health` returns JSON, with HTTP 200 while the last run succeeded and 503 after a failure or an expired cookie. Point your uptime monitor at it.
 
@@ -86,7 +88,6 @@ All settings are environment variables, normally set in `.env`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `STORYPARK_SESSION_ID` | required | `_session_id` cookie value, or a full Cookie header |
-| `PHOTOS_HOST_PATH` | required | host folder mounted at `/data` (compose only) |
 | `INTERVAL` | `6h` | time between runs (`30m`, `6h`, `1d`); `0` runs once and exits |
 | `CHILD_IDS` | all | comma-separated child IDs to include |
 | `CONCURRENCY` | `4` | parallel downloads |
@@ -105,8 +106,7 @@ Child and centre IDs appear in the log on every run.
 ## What you get
 
 ```
-/data/
-  .storypark-downloader.json          state: what has been saved, geocoded centres
+/downloads/                           photos and videos, and nothing else
   Ada Lovelace/
     2025/
       storypark_20251103_094512_01.jpg
@@ -114,9 +114,13 @@ Child and centre IDs appear in the log on every run.
       storypark_20251103_101500_01.mp4
     2026/
       storypark_20260212_140301_01.jpg
+
+/state/                               the tool's own files
+  state.json                          what has been saved, geocoded centres, extracted events
+  events.ics                          the calendar feed, when it is turned on
 ```
 
-One folder per child, one per year. The file name is the local date and time the item was taken; `_01`, `_02` and so on separate items from the same second. A child who moves centre gets a second Storypark profile with the same name, and both merge into one folder.
+One folder per child, one per year. Nothing but media is written under `/downloads`, so it can be pointed at a photo library without anything else being swept up. The file name is the local date and time the item was taken; `_01`, `_02` and so on separate items from the same second. A child who moves centre gets a second Storypark profile with the same name, and both merge into one folder.
 
 Videos are saved as the 720p MP4 stream the Storypark web app plays. The original uploads are not downloadable, even with a valid session.
 
@@ -218,14 +222,14 @@ Metadata is written by small purpose-built writers: an EXIF and XMP writer for J
 
 ## Development
 
-Needs Node 22 or newer. There are no runtime dependencies.
+Needs Node 22 or newer. There are no runtime dependencies. The container writes to `/downloads` and `/state`; `OUTPUT_DIR` and `STATE_DIR` override those, which is only useful when running from a checkout.
 
 ```sh
 git clone https://github.com/alangrainger/storypark-downloader.git
 cd storypark-downloader
 npm ci
 npm run build
-STORYPARK_SESSION_ID=... OUTPUT_DIR=./data INTERVAL=0 node dist/index.js
+STORYPARK_SESSION_ID=... OUTPUT_DIR=./downloads STATE_DIR=./state INTERVAL=0 node dist/index.js
 ```
 
 If you are using the [calendar feed](#calendar-feed), `npm run preview -- --days 14` reads your
@@ -234,7 +238,7 @@ the quickest way to compare models or settle on a confidence threshold.
 
 To build the image locally: `docker build -t storypark-downloader .`
 
-Releases are cut by pushing a `v*` tag matching the version in `package.json`; GitHub Actions builds the multi-arch image, pushes it to GHCR and attaches a build provenance attestation.
+Releases are cut by pushing a `v*` tag matching the version in `package.json`; GitHub Actions builds the multi-arch image, pushes it to GHCR, attaches a build provenance attestation, and opens a draft release for the tag with notes generated from the commits, ready to edit and publish.
 
 ## Licence
 

@@ -7,13 +7,12 @@ RUN npm run build
 
 FROM node:22-alpine
 ENV NODE_ENV=production \
-    OUTPUT_DIR=/data \
     PORT=3000
 WORKDIR /app
 # No runtime dependencies: only the compiled output and package.json (for "type": "module").
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 USER node
-VOLUME /data
+VOLUME /downloads /state
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

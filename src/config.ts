@@ -19,7 +19,10 @@ export interface EventsConfig {
 export interface Config {
   /** Full Cookie header value sent to Storypark. */
   cookie: string
+  /** Photos and videos, and nothing else: this is what a photo library ingests. */
   outputDir: string
+  /** The state file and the calendar feed. Kept apart from the photos on purpose. */
+  stateDir: string
   /** Milliseconds between runs; 0 means run once and exit. */
   intervalMs: number
   /** Child IDs to sync; empty means every child on the account. */
@@ -107,7 +110,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!session) throw new Error('STORYPARK_SESSION_ID is required (see README for how to get it)')
   return {
     cookie: toCookieHeader(session),
-    outputDir: env.OUTPUT_DIR || '/data',
+    /* The container mounts these two. OUTPUT_DIR and STATE_DIR exist only so the app can be run
+       from a source checkout, where neither path exists; a deployment never sets them. */
+    outputDir: env.OUTPUT_DIR || '/downloads',
+    stateDir: env.STATE_DIR || '/state',
     intervalMs: parseInterval(env.INTERVAL ?? '6h'),
     childIds: (env.CHILD_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
     concurrency: Math.max(1, Number(env.CONCURRENCY ?? 4)),

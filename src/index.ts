@@ -55,7 +55,7 @@ function startServer(): void {
       res.end(JSON.stringify(health))
     } else if (eventsPath && url === eventsPath) {
       try {
-        const body = await readFile(path.join(config.outputDir, EVENTS_FILE))
+        const body = await readFile(path.join(config.stateDir, EVENTS_FILE))
         res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8' })
         res.end(body)
       } catch {
@@ -73,7 +73,7 @@ function startServer(): void {
 
 async function main(): Promise<void> {
   const cadence = config.intervalMs ? `every ${config.intervalMs / 60000} min` : 'run once'
-  log.info(`output ${config.outputDir}, ${cadence}, time zone ${config.timeZone}`)
+  log.info(`photos ${config.outputDir}, state ${config.stateDir}, ${cadence}, time zone ${config.timeZone}`)
   if (config.intervalMs === 0) {
     await runOnce()
     process.exit(health.status === 'ok' ? 0 : 1)

@@ -175,6 +175,6 @@ export async function updateEvents(
 
   const list = [...calendar.values()].map(entry => entry.event).sort((a, b) => startKey(a).localeCompare(startKey(b)))
   stats.published = list.length
-  await writeFileAtomic(path.join(config.outputDir, EVENTS_FILE), buildCalendar(CALENDAR_NAME, list, now))
+  await writeFileAtomic(path.join(config.stateDir, EVENTS_FILE), buildCalendar(CALENDAR_NAME, list, now))
   return stats
 }
