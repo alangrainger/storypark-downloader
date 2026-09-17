@@ -8,6 +8,9 @@ const BASE = 'https://app.storypark.com'
 /** Web page for a story, as a family member sees it. */
 export const storyUrl = (storyId: string) => `${BASE}/stories/${storyId}`
 
+/** Web page for a community post. */
+export const communityPostUrl = (postId: string) => `${BASE}/activity/?community_post_id=${postId}`
+
 /** "12 Example Street\nWellington\nZip/Post Code: 6011\nNZ" -> "12 Example Street, Wellington, 6011, NZ". */
 function oneLineAddress(raw: string | null | undefined): string | undefined {
   const line = (raw ?? '')
@@ -68,6 +71,42 @@ interface StoriesPage {
   next_page_token: string | null
 }
 
+/** A centre the family can see, including one a child has since left. */
+export interface FamilyCentre {
+  id: string
+  name: string
+  /** IANA zone, e.g. "Pacific/Auckland". */
+  timeZone?: string
+}
+
+export interface Classroom {
+  id: string
+  name: string
+  room_active: boolean
+}
+
+/**
+ * A notice from a centre or one of its rooms. These never appear in the stories feed. Unlike a
+ * story, the list record is complete: content is the full text and media has the usual shape.
+ */
+export interface CommunityPost {
+  id: string
+  title: string | null
+  content: string
+  /** ISO timestamp; the only date a community post has. */
+  created_at: string
+  centre_id: string
+  /** The centre, or the room for a classroom post. */
+  group_id: string
+  group_name: string
+  media: Media[]
+}
+
+interface CommunityPostsPage {
+  community_posts: CommunityPost[]
+  next_page_token: string | null
+}
+
 /** What we use from a centre (a school / daycare) record. */
 export interface CentreInfo {
   id: string
@@ -121,6 +160,33 @@ export class StoryparkClient {
       )
       all.push(...page.stories)
       if (!page.next_page_token) return all
+      token = page.next_page_token
+    }
+  }
+
+  async familyCentres(): Promise<FamilyCentre[]> {
+    const body = await this.getJson<{ centres: { id: string; name: string; tzdb_time_zone?: string }[] }>('/api/v3/family/centres')
+    return body.centres.map(c => ({ id: c.id, name: c.name, timeZone: c.tzdb_time_zone || undefined }))
+  }
+
+  async classrooms(centreId: string): Promise<Classroom[]> {
+    const body = await this.getJson<{ classrooms: Classroom[] }>(`/api/v3/family/centres/${centreId}/classrooms`)
+    return body.classrooms
+  }
+
+  /**
+   * Community posts for a centre, or for one of its rooms, created on or after `since`. Pages are
+   * roughly newest-first but not strictly, so paging stops only when a whole page is older.
+   */
+  async communityPosts(centreId: string, roomId: string | undefined, since: string): Promise<CommunityPost[]> {
+    const base = roomId ? `/api/v3/centres/${centreId}/classrooms/${roomId}/community_posts` : `/api/v3/centres/${centreId}/community_posts`
+    const all: CommunityPost[] = []
+    let token = ''
+    for (;;) {
+      const page = await this.getJson<CommunityPostsPage>(`${base}?page_token=${encodeURIComponent(token)}`)
+      const fresh = page.community_posts.filter(p => p.created_at >= since)
+      all.push(...fresh)
+      if (!page.next_page_token || (page.community_posts.length && fresh.length === 0)) return all
       token = page.next_page_token
     }
   }

@@ -8,7 +8,7 @@ import {
   exifDateString, exists, extensionFor, isoLocalWithOffset, localDay, readJson, safeName, saveStream, timestampName,
   utcOffsetString, writeJson, zonedNoon,
 } from './files.js'
-import { type EventsState, type EventStats, type FeedPost, updateEvents } from './events.js'
+import { type EventsState, type EventStats, fromStory, type Post, updateEvents } from './events.js'
 import { geocode, type GeoPoint } from './geocode.js'
 import { log } from './log.js'
 import { stampMp4Date } from './mp4.js'
@@ -201,7 +201,7 @@ export async function syncAll(config: Config): Promise<SyncStats> {
   const backfill = state.version < STATE_VERSION
   if (backfill) log.info('older state file: rewriting embedded metadata on previously saved files')
   const reserved = new Set<string>()
-  const posts = new Map<string, FeedPost>()
+  const posts = new Map<string, Post>()
 
   let children = await client.children()
   if (config.childIds.length) children = children.filter(c => config.childIds.includes(c.id))
@@ -219,7 +219,7 @@ export async function syncAll(config: Config): Promise<SyncStats> {
     for (const story of stories) {
       stats.stories++
       /* Siblings share the centre's community posts, so the map keeps one copy of each. */
-      if (config.events) posts.set(story.id, { story, timeZone: tz })
+      if (config.events) posts.set(story.id, fromStory(client, story, tz))
       const description = `${story.title.trim()}\n${storyUrl(story.id)}`
       const jobs: Promise<void>[] = []
       for (const media of story.media.filter(m => WANTED_TYPES.has(m.type))) {

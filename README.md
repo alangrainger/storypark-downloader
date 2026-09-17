@@ -161,6 +161,10 @@ PDF newsletter. There is nothing structured to subscribe to. Point this tool at 
 model and it reads each new post, pulls out anything that belongs in a calendar, and publishes the
 lot as an iCal feed your phone can subscribe to.
 
+It reads every channel a family account can see: learning stories, centre-wide community posts and
+classroom posts. Storypark keeps those separate, and a notice posted to one never appears in the
+others.
+
 The feature is off until `EVENTS_API_URL` is set. It needs a model server that speaks the
 OpenAI chat completions API and a model that can read images - [Ollama](https://ollama.com),
 LM Studio, vLLM and llama.cpp all qualify.
