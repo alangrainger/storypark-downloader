@@ -1,15 +1,16 @@
 # Storypark downloader
 
-Automatically download your children's photos and videos from [Storypark](https://www.storypark.com/) into a folder you own, ready for [Immich](https://immich.app/), Google Photos or any other photo library.
+Downloads your children's photos and videos from [Storypark](https://www.storypark.com/) into a folder you own, ready for [Immich](https://immich.app/), Google Photos or any other photo library. Optionally, it also turns the centre's notices into a calendar feed.
 
-Storypark lets families view stories but gives them no way to keep the originals. This container runs in the background, checks for new stories on a schedule, and saves every photo and video with the metadata a photo library needs:
+Storypark lets families view stories but not keep the originals. This container checks for new stories on a schedule and saves every photo and video with the metadata a photo library needs:
 
-- 📅 **Dated correctly.** Storypark strips all metadata from its files. The tool works out when each item was taken and writes it back as EXIF (photos) and QuickTime creation dates (videos), including the time zone, so nothing lands on the wrong day.
-- 📍 **Located.** Each file carries the centre's GPS position, so it shows up on the map and in place search.
-- 🔗 **Linked to the story.** The description holds the story title and a link back to it on Storypark.
-- 🔤 **Named to sort.** `storypark_20260908_102523_01.jpg` sorts chronologically in any file browser.
-- 🔁 **Safe to re-run.** Only new items are fetched. Everything already saved is left alone.
-- 🖼️ **Immich-friendly.** Add the folder as an external library and let an Immich workflow drop every new item into an album for each child.
+- 📅 **Dated correctly.** Storypark strips all metadata. The capture time is reconstructed and written back as EXIF (photos) and QuickTime creation dates (videos), time zone included.
+- 📍 **Located.** Each file carries the centre's GPS position.
+- 🔗 **Linked to the story.** The description holds the story title and a link back to it.
+- 🔤 **Named to sort.** `storypark_20260908_102523_01.jpg` sorts chronologically anywhere.
+- 🔁 **Safe to re-run.** Only new items are fetched.
+- 🖼️ **Immich-friendly.** Add the folder as an external library and let a workflow file each child's photos into an album.
+- 🗓️ **Calendar feed (optional).** A vision model on your own network reads the centre's notices and posters and publishes the events as an iCal feed. See [Calendar feed](docs/calendar-feed.md).
 
 > [!IMPORTANT]
 > This container is intended to be served on your local network. It holds a session cookie with full
@@ -35,7 +36,7 @@ Storypark lets families view stories but gives them no way to keep the originals
 
 ## Quick start
 
-You need Docker with the compose plugin. The image is published at `ghcr.io/alangrainger/storypark-downloader` for amd64 and arm64.
+Needs Docker with the compose plugin. The image is `ghcr.io/alangrainger/storypark-downloader`, for amd64 and arm64.
 
 ```sh
 mkdir storypark-downloader && cd storypark-downloader
@@ -44,14 +45,14 @@ curl -o .env https://raw.githubusercontent.com/alangrainger/storypark-downloader
 mkdir downloads state
 ```
 
-Paste your cookie into `STORYPARK_SESSION_ID` in `.env` (see [Getting the cookie](#getting-the-cookie)). The compose file keeps photos in `./downloads` and the tool's own files in `./state`, so the photos folder can be handed to a photo library as-is. Then:
+Paste your cookie into `STORYPARK_SESSION_ID` in `.env` (see [Getting the cookie](#getting-the-cookie)), then:
 
 ```sh
 docker compose up -d
 docker compose logs -f
 ```
 
-The first run downloads everything. After that the container checks for new stories every six hours.
+Photos land in `./downloads`, which holds nothing else and can be handed to a photo library as-is. The tool's own files go in `./state`. The first run downloads everything; after that it checks every six hours.
 
 Without compose:
 
@@ -64,9 +65,7 @@ docker run -d --name storypark-downloader --restart unless-stopped \
   ghcr.io/alangrainger/storypark-downloader:latest
 ```
 
-The container runs as a non-root user (UID 1000). Make sure both folders are writable by that user.
-
-`http://localhost:3000/health` returns JSON, with HTTP 200 while the last run succeeded and 503 after a failure or an expired cookie. Point your uptime monitor at it.
+The container runs as UID 1000; both folders must be writable by it. `http://localhost:3000/health` returns 200 while the last run succeeded and 503 after a failure or an expired cookie.
 
 ## Getting the cookie
 
@@ -83,7 +82,7 @@ Copying the whole `Cookie:` request header from the Network tab works too.
 
 ## Configuration
 
-All settings are environment variables, normally set in `.env`.
+Environment variables, normally set in `.env`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -94,21 +93,15 @@ All settings are environment variables, normally set in `.env`.
 | `CENTRE_GPS` | none | manual coordinates per centre, e.g. `100001=-41.2865,174.7762;100002=-36.8485,174.7633` |
 | `TZ` | `Pacific/Auckland` | fallback time zone, used only when a centre does not report one |
 | `HEALTH_PORT` | `3000` | host port for `/health` (compose only) |
-| `EVENTS_API_URL` | none | turns on the [calendar feed](#calendar-feed); base URL of an OpenAI-compatible API |
-| `EVENTS_MODEL` | required with the above | model id, which must accept images |
-| `EVENTS_API_KEY` | none | bearer token, if your model server wants one |
-| `EVENTS_MIN_CONFIDENCE` | `0.6` | drop events the model is less sure of than this |
-| `EVENTS_MAX_POST_AGE_DAYS` | `60` | oldest post worth reading; not a limit on the events |
-| `EVENTS_TOKEN` | none | secret path segment for the feed URL |
-| `EVENTS_IGNORE_CENTRES` | none | comma-separated centre IDs whose posts are not read for events |
+| `EVENTS_*` | off | the [calendar feed](docs/calendar-feed.md) |
 
 Child and centre IDs appear in the log on every run.
 
 ## What you get
 
 ```
-/downloads/                           photos and videos, and nothing else
-  Ada Lovelace/
+/downloads/                           photos and videos, nothing else
+  Jane Smith/
     2025/
       storypark_20251103_094512_01.jpg
       storypark_20251103_094512_02.jpg
@@ -118,108 +111,54 @@ Child and centre IDs appear in the log on every run.
 
 /state/                               the tool's own files
   state.json                          what has been saved, geocoded centres, extracted events
-  events.ics                          the calendar feed, when it is turned on
+  events.ics                          the calendar feed, when it is on
 ```
 
-One folder per child, one per year. Nothing but media is written under `/downloads`, so it can be pointed at a photo library without anything else being swept up. The file name is the local date and time the item was taken; `_01`, `_02` and so on separate items from the same second. A child who moves centre gets a second Storypark profile with the same name, and both merge into one folder.
+One folder per child, one per year. The file name is the local date and time the item was taken; `_01`, `_02` separate items from the same second. A child who moves centre gets a second Storypark profile with the same name, and both merge into one folder.
 
-Videos are saved as the 720p MP4 stream the Storypark web app plays. The original uploads are not downloadable, even with a valid session.
+Videos are the 720p MP4 stream the web app plays; the originals are not downloadable, even with a valid session.
 
-Each photo carries EXIF `DateTimeOriginal` with its UTC offset, GPS coordinates, and an XMP description. Each video carries QuickTime creation times plus Apple-style creation date, description and location keys. The file's modification time matches too.
-
-The description is the story title and its URL:
+Photos carry EXIF `DateTimeOriginal` with UTC offset, GPS coordinates and an XMP description. Videos carry QuickTime creation times plus Apple-style creation date, description and location keys. The file modification time matches. The description is the story title and its URL:
 
 ```
 Painting with leaves
 https://app.storypark.com/stories/123456789
 ```
 
-The GPS position is the centre's. Storypark does not publish coordinates, so the centre's postal address, or failing that its name and country, is looked up once with OpenStreetMap's Nominatim and cached. The log shows the match. If it is wrong, or a centre cannot be found, set `CENTRE_GPS`; the next run rewrites the files.
+The GPS position is the centre's. Storypark publishes no coordinates, so the centre's postal address, or failing that its name and country, is looked up once with OpenStreetMap's Nominatim and cached. The log shows the match. If it is wrong or missing, set `CENTRE_GPS`; the next run rewrites the files.
 
 ## How dates are worked out
 
-Storypark keeps no capture time, so the date is reconstructed from two clues: the story date, which is the day the educator says it happened and is often backdated, and the time the file was uploaded. The centre's own time zone is used throughout; Storypark reports it for every centre.
+Storypark keeps no capture time, so it is reconstructed from the story date - the day the educator says it happened, often backdated - and the upload time, in the centre's own time zone.
 
 | Upload happened | Date used |
 |---|---|
 | On the story date | The upload time, so the photo has a real time of day |
-| After the story date | 12:00 on the story date, as stories have a date only but no time |
-| Before the story date | The upload time, because a photo cannot be taken after it was uploaded. This happens when an older image is reused in a new story |
+| After the story date | 12:00 on the story date; stories have a date but no time |
+| Before the story date | The upload time, since a photo cannot be taken after it was uploaded. This is an older image reused in a new story |
 
 ## Using with Immich
 
-Add the output folder as an [external library](https://docs.immich.app/features/libraries/). Immich reads the embedded date, time zone, location and description directly.
+Add `downloads` as an [external library](https://docs.immich.app/features/libraries/). Immich reads the embedded date, time zone, location and description directly.
 
-**Albums.** Immich's Workflows feature can file new items into an album as they arrive. Create a workflow with the *asset created* trigger, a filter on the file name or path, and the *add to album* action. One workflow per child works well: filter on the child's folder name, and add to that child's album. Every file this tool writes starts with `storypark_`, so a single workflow filtering on that prefix collects everything into one album instead. Workflows fire for external library scans in recent Immich versions.
+**Albums.** An Immich workflow with the *asset created* trigger, a filter on the path, and the *add to album* action files new items as they arrive - one workflow per child, filtering on the child's folder name. Every file starts with `storypark_`, so one workflow on that prefix collects everything instead.
 
-If an update rewrites metadata on existing files, Immich will not notice on its own. Select the affected assets, for example by searching for the file name prefix `storypark_`, and choose **Refresh metadata**.
+If an update rewrites metadata on existing files, select those assets (search for `storypark_`) and choose **Refresh metadata**; Immich will not notice on its own.
 
 ## Calendar feed
 
-Centres announce their events as ordinary posts: a sentence of text, often with a poster image or a
-PDF newsletter. There is nothing structured to subscribe to. Point this tool at a local language
-model and it reads each new post, pulls out anything that belongs in a calendar, and publishes the
-lot as an iCal feed your phone can subscribe to.
-
-It reads every channel a family account can see: learning stories, centre-wide community posts and
-classroom posts. Storypark keeps those separate, and a notice posted to one never appears in the
-others.
-
-The feature is off until `EVENTS_API_URL` is set. It needs a model server that speaks the
-OpenAI chat completions API and a model that can read images - [Ollama](https://ollama.com),
-LM Studio, vLLM and llama.cpp all qualify.
+Optional. A vision model on your own network reads each new post - stories, centre notices and classroom posts, posters included - and publishes anything dated as an iCal feed at `/events.ics`, for Apple Calendar, Home Assistant or any client that polls a URL. Two variables turn it on:
 
 ```sh
 EVENTS_API_URL=http://localhost:11434/v1
 EVENTS_MODEL=qwen3-vl:8b
 ```
 
-The feed appears at `http://<host>:3000/events.ics` and is rewritten at the end of every cycle. It
-holds events from today onwards only; past ones drop off. Each entry carries the post text and a
-link back to the story on Storypark.
-
-`EVENTS_MAX_POST_AGE_DAYS` is about posts, not events. A centre announces an event weeks before it
-happens, so on a first run the tool has to read back far enough to find those announcements. After
-that it only reads posts it has not seen before, and the setting stops mattering.
-
-**Subscribing.** In Apple Calendar, *File > New Calendar Subscription*, paste the URL, and set it to
-refresh hourly. On iOS, *Settings > Apps > Calendar > Accounts > Add Account > Other > Add
-Subscribed Calendar*. Home Assistant reads it through the Remote Calendar integration.
-
-Google Calendar is the exception. It fetches subscribed feeds from Google's own servers, so a feed
-on your own network is invisible to it. Reaching it means publishing the feed through a reverse
-proxy, as described at the top of this page, with `EVENTS_TOKEN` set. A client that polls from your
-own device or server avoids the question entirely.
-
-**If you do expose the port,** set `EVENTS_TOKEN` to a long random string, for example from
-`openssl rand -hex 16`. The feed then moves to `http://<host>:3000/<token>/events.ics`, which is
-unguessable, and the bare path stops working. It is obscurity rather than authentication: it stops
-a casual scan, but the URL is still readable by anything that logs it.
-
-**More than one centre.** When two centres post to your account - siblings at different places, or
-a child who has just moved - every entry is prefixed with the centre that announced it, so
-`Photo Day` becomes `Sunnyvale Preschool: Photo Day`. With a single centre the prefix would be on
-every entry and tell you nothing, so it is left off. Either way the centre name is the first line of
-the event's notes.
-
-A child who changes centre keeps their old profile, and the old centre carries on posting to it, so
-its notices keep arriving indefinitely. Put that centre's ID in `EVENTS_IGNORE_CENTRES` and its
-posts stop being read. Photos are unaffected, so the old centre's last stories still get archived -
-only the calendar is scoped. Centre IDs are in the log on every run.
-
-**What gets sent where.** Post text and attached images go to whatever `EVENTS_API_URL` points at,
-once per post. Pointing it at a machine on your own network keeps everything in the house; pointing
-it at a hosted API sends your centre's posts and photos to that provider.
-
-**Accuracy.** The model reads posters as well as text, including handwritten ones, but it does
-misread the occasional date. Every event carries a confidence score and anything below
-`EVENTS_MIN_CONFIDENCE` is dropped. Treat the feed as a prompt to check the original post, which is
-one tap away on each entry, rather than as gospel. Raising the threshold gives you fewer, safer
-entries.
+Subscribing, thresholds, more than one centre and what gets sent where: [docs/calendar-feed.md](docs/calendar-feed.md).
 
 ## When the cookie expires
 
-Storypark sessions eventually expire. When that happens the container keeps running, logs `COOKIE EXPIRED` on every cycle, and `/health` returns 503 with `"status": "auth_error"`. Repeat [Getting the cookie](#getting-the-cookie), update `.env`, and restart the container.
+The container keeps running, logs `COOKIE EXPIRED` every cycle, and `/health` returns 503 with `"status": "auth_error"`. Repeat [Getting the cookie](#getting-the-cookie), update `.env`, restart.
 
 ## Updating
 
@@ -228,17 +167,17 @@ docker compose pull
 docker compose up -d
 ```
 
-When a new version changes what is embedded in the files, the next run rewrites the metadata on every saved file once. This is tracked by a version number in the state file, and the log says when it happens.
+When a version changes what is embedded in the files, the next run rewrites the metadata on every saved file once. The log says when it happens.
 
 ## How it works
 
-The Storypark web app talks to an internal JSON API at `app.storypark.com/api/v3`, authenticated by the session cookie. This tool calls the same endpoints the web app uses to list your children, page through their stories and read centre details, then downloads each media file. Nothing is scraped from HTML and no browser is needed.
+The Storypark web app talks to an internal JSON API at `app.storypark.com/api/v3`, authenticated by the session cookie. This tool calls the same endpoints to list your children, page through their stories and community posts and read centre details, then downloads each media file. Nothing is scraped from HTML; no browser is needed.
 
-Metadata is written by small purpose-built writers: an EXIF and XMP writer for JPEGs, and an MP4 box editor that patches the header times and appends an Apple metadata block, shifting chunk offsets as needed. Files are never re-encoded.
+Metadata is written by small purpose-built writers: EXIF and XMP for JPEGs, and an MP4 box editor that patches the header times and appends an Apple metadata block, shifting chunk offsets as needed. Files are never re-encoded.
 
 ## Development
 
-Needs Node 22 or newer. There are no runtime dependencies. The container writes to `/downloads` and `/state`; `OUTPUT_DIR` and `STATE_DIR` override those, which is only useful when running from a checkout.
+Node 22 or newer, no runtime dependencies. `OUTPUT_DIR` and `STATE_DIR` override the container's `/downloads` and `/state`, which only matters when running from a checkout.
 
 ```sh
 git clone https://github.com/alangrainger/storypark-downloader.git
@@ -248,11 +187,7 @@ npm run build
 STORYPARK_SESSION_ID=... OUTPUT_DIR=./downloads STATE_DIR=./state INTERVAL=0 node dist/index.js
 ```
 
-If you are using the [calendar feed](#calendar-feed), `npm run preview -- --days 14` reads your
-recent posts and prints what the model finds in each, without writing a state file or a feed. It is
-the quickest way to compare models or settle on a confidence threshold.
-
-To build the image locally: `docker build -t storypark-downloader .`
+`npm run preview -- --days 14` reads recent posts through the calendar-feed model and prints what it finds, writing nothing. Build the image locally with `docker build -t storypark-downloader .`
 
 ## Licence
 
